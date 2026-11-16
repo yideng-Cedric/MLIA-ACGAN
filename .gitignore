@@ -3,4 +3,3 @@ __pycache__/
 *.py[cod]
 .vscode/
 runs/
-sysu-shape-dataset/
