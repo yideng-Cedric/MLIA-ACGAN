@@ -1,6 +1,6 @@
-torch>=2.0
+torch>=2.6
 numpy>=1.23
-Pillow>=9.1
+Pillow>=10.1
 torchgan==0.1.0
-# Optional evaluation (also installs torchvision):
-# torch-fidelity
+scikit-learn>=1.2
+torch-fidelity==0.4.0

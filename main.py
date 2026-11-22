@@ -43,12 +43,14 @@ def main():
               "image_size": args.image_size, "batch_size": args.batch_size, "g_loss": args.g_loss}
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(config["seed"])
-    args.output = args.output or ROOT / "runs" / f"{args.architecture}_{args.image_size}"
-    args.output.mkdir(parents=True, exist_ok=True)
 
     if args.mode == "generate":
         checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=True)
         config = checkpoint["config"]
+
+    args.output = args.output or (args.checkpoint.parent / "generated" if args.mode == "generate"
+                                 else ROOT / "runs" / f"{args.architecture}_{args.image_size}")
+    args.output.mkdir(parents=True, exist_ok=True)
 
     # 1. Load the five-class dataset and save the split.
     if args.mode == "train" or EVALUATE:

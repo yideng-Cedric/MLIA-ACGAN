@@ -1,47 +1,38 @@
-# AC-GAN
+# SYSU-Shape AC-GAN
 
-- `acgan.py`: models, data loading, training, generation, and optional evaluation.
-- `main.py`: settings and the complete pipeline. Training commands are also at the top.
-- Data: `sysu-shape-dataset/<class>/images`; outputs: `runs/`.
+This project generates five categories of SYSU-Shape images from a noise vector and a class label. The 64px model adds DiffAugment translation, conditional BatchNorm at 4×4, 8×8, and 16×16, and an exponential moving average (EMA) of generator weights. The original 128px paper-style implementation is in `main.py` and `acgan.py`.
 
-## Models
+## Reproduce the 64px experiments
 
-| `--architecture` | Model |
-|---|---|
-| `paper` (default) | Original appendix architecture at 32/128px; 64px is an adaptation. |
-| `torchgan` | Packaged TorchGAN 0.1.0 AC-GAN. |
-| `baseline` | Previous custom model, retained for old checkpoints. |
+Install a PyTorch build for your hardware, then install the project requirements. Commands below run from the repository root.
 
-The paper model uses five classes. Unspecified reshape/padding details are reconstructed;
-BN uses PyTorch defaults and activation noise is omitted. Default G loss is
-non-saturating; `--g-loss minimax` selects the main-text objective.
-
-## Run
-
-Use the local `.venv` below; on another machine install `requirements.txt`
-in a suitable PyTorch environment. Run from the project directory in PowerShell.
-
-```powershell
-# Paper architecture, 128x128
-python main.py --architecture paper --image-size 128 --output runs/paper_128
-# Packaged model, 64x64
-python main.py --architecture torchgan --image-size 64 --output runs/torchgan_64
-# Generate from a saved checkpoint
-python main.py --mode generate --checkpoint runs/paper_128/model.pt --output runs/samples
+```bash
+python -m pip install -r requirements.txt
+python train_cbn.py --variant original --seed 42 --output runs/original_acgan/plain_64/seed42
+python train_cbn.py --variant cbn --seed 42 --output runs/cbn/seed42
 ```
 
-Edit `CONFIG` and `DATA_DIR` in `main.py`. Defaults: batch 64, 100 epochs,
-Adam 0.0002, seed 42; fixed stratified 80/20 split. Use a new output folder per run.
-Each run saves settings, split, loss CSV, checkpoints, and generated images.
-`random_class` samples random labels using the same conditional model.
+The original 64px run uses 6,000 updates. The CBN run uses 12,000 updates and EMA decay 0.999. Repeat with `--seed 123` for the second seed. Choose a fresh output folder for every training run. Both load the same relative `sysu_split.json` with 1,234 training images and 307 validation images. The default dataset is `sysu-shape-dataset/`. Use `--data-dir PATH` if you keep the dataset elsewhere.
 
-For optional FID/KID/IS, install `torch-fidelity`, enable `EVALUATE`, and increase
-sample counts. Architecture reconstruction does not imply reproduction of paper scores.
+```bash
+python evaluate_cbn.py runs/original_acgan/plain_64/seed42/model_6000.pt runs/cbn/seed42/model_12000.pt --output runs/evaluation_seed42
+python train_cbn.py --checkpoint runs/cbn/seed42/model_12000.pt --output runs/generated_seed42
+```
 
-## References
+Evaluation saves FID, KID, Inception Score, classifier agreement, and a grid of real validation images alongside matched-noise generated images. It downloads the standard torch-fidelity Inception weights on first use. For an offline run, pass a local copy with `--inception-weights PATH`. The sampling command uses EMA when the checkpoint contains it. `random_class` samples labels at random from the five classes.
 
-[Paper](https://proceedings.mlr.press/v70/odena17a/odena17a.pdf) ·
-[Architecture appendix](https://proceedings.mlr.press/v70/odena17a/odena17a-supp.pdf) ·
-[TorchGAN](https://github.com/torchgan/torchgan/blob/master/torchgan/models/acgan.py) ·
-[PyTorch-GAN](https://github.com/eriklindernoren/PyTorch-GAN/blob/master/implementations/acgan/acgan.py) ·
-[Keras-GAN](https://github.com/eriklindernoren/Keras-GAN/blob/master/acgan/acgan.py)
+## Original 128px implementation
+
+```bash
+python main.py --architecture paper --image-size 128 --epochs 100 --output runs/original_acgan/paper_128
+```
+
+The original model reconstructs the paper appendix architecture for this dataset, with the non-saturating generator loss by default. Use `--g-loss minimax` for the main-text objective. [AC-GAN paper](https://proceedings.mlr.press/v70/odena17a.html)
+
+## Saved results
+
+- [Original 128px sample grid](results/original/paper128.png)
+- [Matched-noise comparison with real images, seed 42](results/seed42/comparison.png) and [metrics](results/seed42/metrics.json)
+- [Matched-noise comparison with real images, seed 123](results/seed123/comparison.png) and [metrics](results/seed123/metrics.json)
+
+The comparison grids show the archived 6,000-step 64px baseline and the 12,000-step CBN run. They summarize the two complete training recipes. Full local checkpoints, samples, and logs are in the Git-ignored `runs/` directory.

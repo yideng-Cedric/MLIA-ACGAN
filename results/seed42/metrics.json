@@ -1,0 +1,181 @@
+{
+  "classes": [
+    "airplane",
+    "bicycle",
+    "boat",
+    "car",
+    "motorbike"
+  ],
+  "fid_kid_samples": {
+    "real": 307,
+    "generated": 256
+  },
+  "class_control_noise_seed": 56017,
+  "class_control_samples_per_class": 256,
+  "real_validation": {
+    "n": 307,
+    "correct": 296,
+    "balanced_accuracy": 0.9608097124378345,
+    "confusion_matrix": [
+      [
+        92,
+        2,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        41,
+        1,
+        1,
+        2
+      ],
+      [
+        0,
+        1,
+        38,
+        0,
+        0
+      ],
+      [
+        0,
+        1,
+        0,
+        59,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        1,
+        66
+      ]
+    ]
+  },
+  "models": [
+    {
+      "method": "original_acgan",
+      "seed": 42,
+      "step": 6000,
+      "metrics": {
+        "frechet_inception_distance": 226.65940448841565,
+        "kernel_inception_distance_mean": 0.12139986276626587,
+        "kernel_inception_distance_std": 0.0071379815955452145,
+        "inception_score_mean": 3.234829058612392,
+        "inception_score_std": 0.3216835869495564
+      },
+      "independent_generated": {
+        "n": 1280,
+        "correct": 370,
+        "balanced_accuracy": 0.2890625,
+        "confusion_matrix": [
+          [
+            36,
+            66,
+            130,
+            10,
+            14
+          ],
+          [
+            8,
+            116,
+            113,
+            7,
+            12
+          ],
+          [
+            4,
+            62,
+            178,
+            4,
+            8
+          ],
+          [
+            9,
+            82,
+            134,
+            11,
+            20
+          ],
+          [
+            8,
+            123,
+            86,
+            10,
+            29
+          ]
+        ]
+      },
+      "within_class_inception_cosine_distance": [
+        0.3605092167854309,
+        0.36050301790237427,
+        0.35390418767929077,
+        0.3612005114555359,
+        0.3488883972167969
+      ]
+    },
+    {
+      "method": "diffaugment_cbn_ema",
+      "seed": 42,
+      "step": 12000,
+      "metrics": {
+        "frechet_inception_distance": 172.84750346931224,
+        "kernel_inception_distance_mean": 0.07085218429565429,
+        "kernel_inception_distance_std": 0.009039639575271033,
+        "inception_score_mean": 4.271206583982442,
+        "inception_score_std": 0.3445708011842412
+      },
+      "independent_generated": {
+        "n": 1280,
+        "correct": 932,
+        "balanced_accuracy": 0.728125,
+        "confusion_matrix": [
+          [
+            179,
+            8,
+            51,
+            16,
+            2
+          ],
+          [
+            0,
+            224,
+            7,
+            4,
+            21
+          ],
+          [
+            4,
+            33,
+            204,
+            13,
+            2
+          ],
+          [
+            14,
+            52,
+            35,
+            135,
+            20
+          ],
+          [
+            1,
+            41,
+            9,
+            15,
+            190
+          ]
+        ]
+      },
+      "within_class_inception_cosine_distance": [
+        0.2992135286331177,
+        0.33284640312194824,
+        0.3262178301811218,
+        0.3161230683326721,
+        0.3097493648529053
+      ]
+    }
+  ]
+}
