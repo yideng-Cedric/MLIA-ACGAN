@@ -1,8 +1,43 @@
 # SYSU-Shape AC-GAN
 
-This project generates five categories of SYSU-Shape images from a noise vector and a class label. The 64px model adds DiffAugment translation, conditional BatchNorm at 4×4, 8×8, and 16×16, and an exponential moving average (EMA) of generator weights. The original 128px paper-style implementation is in `main.py` and `acgan.py`.
+## Current method
 
-## Reproduce the 64px experiments
+The model generates 64×64 RGB images of airplanes, bicycles, boats, cars, and motorbikes. It keeps the AC-GAN objective. The generator receives 100 noise values and a class label. The discriminator scores both realism and class, and the generator learns to satisfy both tasks.
+
+| Part | Implementation |
+| --- | --- |
+| Data | Crop around the annotated objects with a small margin and resize to 64×64. Use the supplied split of 1,234 training and 307 validation photos. |
+| Generator | Apply conditional BatchNorm at 4×4, 8×8, and 16×16 so the class influences the generator beyond its input. |
+| Training augmentation | Apply differentiable translations of up to 4 pixels and horizontal flips with 25% probability to real and generated images seen by the discriminator. |
+| Checkpoint | Use the exponential moving average of generator weights for sampling, with decay 0.999. |
+| Inference | The live demo samples Gaussian noise truncated at ±1.5. This improved class recognition in our experiments and reduced within-class variation. |
+
+The matched plain AC-GAN baseline uses the same crop, data split, and training budget. It uses standard BatchNorm and trains without augmentation or EMA. Both models train with standard Gaussian noise.
+
+## Train and evaluate
+
+Run from the repository root with the project Python environment active. Install a PyTorch build suitable for your hardware, then run `python -m pip install -r requirements.txt`.
+
+```powershell
+$env:CUBLAS_WORKSPACE_CONFIG = ':4096:8'
+python train.py --framing crop64 --seed 2026 --steps 12000 --horizontal-flip-prob 0.25 --deterministic --output runs/current
+python train.py --framing crop64 --seed 2026 --steps 12000 --plain-acgan --deterministic --output runs/baseline
+python evaluate.py runs/baseline/model_12000.pt runs/current/model_12000.pt --output runs/evaluation
+```
+
+The standard-noise comparison reports FID, KID, and Inception Score overall and per class, along with an independent classifier's class agreement. It compares 512 generated images with the 307 validation photos overall and uses 256 generated images per class. Inception weights download on first evaluation. Use `--inception-weights PATH` with a local copy and `--data-dir PATH` if your dataset is elsewhere. To evaluate the demo's sampling setting, run `python evaluate.py runs/current/model_12000.pt --truncation 1.5 --output runs/evaluation_truncated`.
+
+In the matched seed-2026 run, the current model reduced KID from 0.1511 to 0.0745 and increased classifier agreement from 27.4% to 77.2% under standard sampling.
+
+## Live demo
+
+```powershell
+python demo.py
+```
+
+The figure shows two held-out photos and two generated images per class. See the [live demo runbook](DEMO.md) for setup, changing the class or noise seed, and the optional noise-only experiment. Model checkpoints and generated outputs live under the Git-ignored `runs/` directory. Train locally or pass an existing checkpoint with `--checkpoint PATH`.
+
+## Reproduce the earlier 64px full-image experiments
 
 Install a PyTorch build for your hardware, then install the project requirements. Commands below run from the repository root.
 
