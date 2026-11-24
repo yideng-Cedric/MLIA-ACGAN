@@ -69,5 +69,6 @@ The original model reconstructs the paper appendix architecture for this dataset
 - [Original 128px sample grid](results/original/paper128.png)
 - [Matched-noise comparison with real images, seed 42](results/seed42/comparison.png) and [metrics](results/seed42/metrics.json)
 - [Matched-noise comparison with real images, seed 123](results/seed123/comparison.png) and [metrics](results/seed123/metrics.json)
+- [Two-seed metric comparison plot](results/metrics_comparison.png), generated with `python3 plot_results.py`
 
 The comparison grids show the archived 6,000-step 64px baseline and the 12,000-step CBN run. They summarize the two complete training recipes. Full local checkpoints, samples, and logs are in the Git-ignored `runs/` directory.
