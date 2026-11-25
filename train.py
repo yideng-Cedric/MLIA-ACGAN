@@ -111,9 +111,16 @@ def load_generation_checkpoint(path, device):
     return generator.to(device).eval(), config, checkpoint["classes"], checkpoint["step"]
 
 
-def save_samples(generator, conditional, classes, device, output, class_name=None, truncation=0.0):
+def save_samples(generator, conditional, classes, device, output, class_name=None, truncation=0.0,
+                 *, random_class_seed=None):
     output.mkdir(parents=True, exist_ok=True)
-    if conditional:
+    if random_class_seed is not None:
+        rng = torch.Generator().manual_seed(random_class_seed)
+        labels = torch.randint(len(classes), (10,), generator=rng)
+        noise_seed = (rng.initial_seed() + 1) % 2**64
+        images = sample(generator, labels, device, noise_seed=noise_seed, truncation=truncation)
+        names = [f"random_{i + 1:02}" for i in range(len(labels))]
+    elif conditional:
         selected = classes if class_name is None else [class_name]
         labels = torch.tensor([classes.index(name) for name in selected]).repeat_interleave(2)
         images = sample(generator, labels, device, shared_noise=class_name is None,
@@ -232,12 +239,15 @@ def main():
                         help="Use standard BatchNorm and train without augmentation or EMA")
     parser.add_argument("--deterministic", action="store_true", help="Use deterministic PyTorch kernels")
     parser.add_argument("--steps", type=int, default=12000)
-    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--seed", type=int, default=42, help="Seed for training or random-class sampling")
     parser.add_argument("--horizontal-flip-prob", type=float, default=0.0,
                         help="Per-image probability of flipping horizontally before D")
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--checkpoint", type=Path)
-    parser.add_argument("--class-name", help="Select a category when sampling a conditional checkpoint")
+    class_choice = parser.add_mutually_exclusive_group()
+    class_choice.add_argument("--class-name", help="Select a category when sampling a conditional checkpoint")
+    class_choice.add_argument("--random-class", action="store_true",
+                              help="Use a randomly drawn category for each of ten conditional samples")
     parser.add_argument("--truncation", type=float, default=0.0,
                         help="Latent limit for conditional sampling; 0 uses standard Gaussian noise")
     parser.add_argument("--output", type=Path, required=True)
@@ -248,6 +258,8 @@ def main():
         parser.error("--plain-acgan requires conditional training without horizontal flips")
     if not math.isfinite(args.truncation) or args.truncation < 0 or (args.truncation and not args.checkpoint):
         parser.error("--truncation requires a nonnegative finite value and a checkpoint")
+    if (args.class_name or args.random_class) and not args.checkpoint:
+        parser.error("--class-name and --random-class require --checkpoint")
     if args.deterministic:
         torch.use_deterministic_algorithms(True)
     torch.set_num_threads(4)
@@ -257,12 +269,11 @@ def main():
         conditional = config.get("conditional", True)
         if args.class_name and (not conditional or args.class_name not in classes):
             parser.error("--class-name requires a conditional checkpoint and a valid SYSU class")
-        if args.truncation and not conditional:
-            parser.error("--truncation requires a conditional checkpoint")
-        save_samples(generator, conditional, classes, device, args.output, args.class_name, args.truncation)
+        if (args.truncation or args.random_class) and not conditional:
+            parser.error("--truncation and --random-class require a conditional checkpoint")
+        save_samples(generator, conditional, classes, device, args.output, args.class_name, args.truncation,
+                     random_class_seed=args.seed if args.random_class else None)
     else:
-        if args.class_name:
-            parser.error("--class-name requires --checkpoint")
         train(load_split(args.data_dir), args.framing, not args.unconditional,
               args.seed, args.steps, device, args.output, args.horizontal_flip_prob, args.plain_acgan)
 
