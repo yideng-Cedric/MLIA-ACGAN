@@ -1,0 +1,293 @@
+{
+  "settings": {
+    "framing": "crop64",
+    "n_real_validation": 307,
+    "n_generated_per_mode": 512,
+    "n_generated_per_conditional_class": 256,
+    "sampling": "standard_gaussian",
+    "noise_seed": 1234,
+    "random_class_seed": 2026,
+    "conditional_label_mix": "validation_frequencies",
+    "random_label_mix": "uniform",
+    "class_agreement": "Balanced accuracy against the generator's input labels. Noise-only samples have no target label.",
+    "example_sampling": {
+      "conditional": {
+        "noise_seed": 56017,
+        "samples_per_class": 2
+      },
+      "random_class": {
+        "input_labels": [
+          "airplane",
+          "motorbike",
+          "car",
+          "bicycle",
+          "bicycle",
+          "boat",
+          "boat",
+          "airplane",
+          "airplane",
+          "motorbike"
+        ]
+      }
+    }
+  },
+  "classifier_on_validation": {
+    "n": 307,
+    "correct": 302,
+    "balanced_accuracy": 0.9855031349573441,
+    "confusion_matrix": [
+      [
+        92,
+        0,
+        0,
+        2,
+        0
+      ],
+      [
+        0,
+        44,
+        0,
+        0,
+        1
+      ],
+      [
+        0,
+        0,
+        39,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        60,
+        0
+      ],
+      [
+        0,
+        2,
+        0,
+        0,
+        67
+      ]
+    ]
+  },
+  "runs": {
+    "conditional": {
+      "checkpoint": "runs/current/model_12000.pt",
+      "training_seed": 2026,
+      "training_steps": 12000
+    },
+    "unconditional_gan": {
+      "checkpoint": "runs/unconditional/model_12000.pt",
+      "training_seed": 2026,
+      "training_steps": 12000
+    }
+  },
+  "modes": {
+    "conditional": {
+      "n_real": 307,
+      "n_generated": 512,
+      "frechet_inception_distance": 160.41257710992767,
+      "kernel_inception_distance_mean": 0.07452078580856324,
+      "kernel_inception_distance_std": 0.009301620051396864,
+      "inception_score_mean": 4.595544726823997,
+      "inception_score_std": 0.37878562183535003,
+      "class_agreement": {
+        "n": 1280,
+        "correct": 988,
+        "balanced_accuracy": 0.771875,
+        "confusion_matrix": [
+          [
+            198,
+            3,
+            33,
+            21,
+            1
+          ],
+          [
+            4,
+            172,
+            30,
+            8,
+            42
+          ],
+          [
+            10,
+            7,
+            228,
+            11,
+            0
+          ],
+          [
+            14,
+            7,
+            45,
+            161,
+            29
+          ],
+          [
+            1,
+            17,
+            4,
+            5,
+            229
+          ]
+        ]
+      },
+      "input_class_counts": {
+        "airplane": 157,
+        "bicycle": 75,
+        "boat": 65,
+        "car": 100,
+        "motorbike": 115
+      },
+      "predicted_class_counts": {
+        "airplane": 150,
+        "bicycle": 65,
+        "boat": 104,
+        "car": 64,
+        "motorbike": 129
+      },
+      "predicted_class_coverage": 5,
+      "per_class": {
+        "airplane": {
+          "n_real": 94,
+          "n_generated": 256,
+          "frechet_inception_distance": 190.556086419544,
+          "kernel_inception_distance_mean": 0.12762536764144897,
+          "kernel_inception_distance_std": 0.016572894115098977,
+          "inception_score_mean": 2.9415803897072044,
+          "inception_score_std": 0.3070222387037206,
+          "class_hit_rate": 0.7734375
+        },
+        "bicycle": {
+          "n_real": 45,
+          "n_generated": 256,
+          "frechet_inception_distance": 317.47241178838794,
+          "kernel_inception_distance_mean": 0.19619039535522462,
+          "kernel_inception_distance_std": 0.015567947079653881,
+          "inception_score_mean": 3.502575527504294,
+          "inception_score_std": 0.2428481815689633,
+          "class_hit_rate": 0.671875
+        },
+        "boat": {
+          "n_real": 39,
+          "n_generated": 256,
+          "frechet_inception_distance": 241.93367303182205,
+          "kernel_inception_distance_mean": 0.11877653121948242,
+          "kernel_inception_distance_std": 0.015266080454304222,
+          "inception_score_mean": 3.567333753385185,
+          "inception_score_std": 0.3810149390463182,
+          "class_hit_rate": 0.890625
+        },
+        "car": {
+          "n_real": 60,
+          "n_generated": 256,
+          "frechet_inception_distance": 222.38475943397594,
+          "kernel_inception_distance_mean": 0.1167085599899292,
+          "kernel_inception_distance_std": 0.011013179987217708,
+          "inception_score_mean": 3.1212176700524155,
+          "inception_score_std": 0.34382077912031356,
+          "class_hit_rate": 0.62890625
+        },
+        "motorbike": {
+          "n_real": 69,
+          "n_generated": 256,
+          "frechet_inception_distance": 179.72851440118825,
+          "kernel_inception_distance_mean": 0.09050690650939941,
+          "kernel_inception_distance_std": 0.011386752666545102,
+          "inception_score_mean": 3.07966655060636,
+          "inception_score_std": 0.23702465994529068,
+          "class_hit_rate": 0.89453125
+        }
+      }
+    },
+    "random_class": {
+      "n_real": 307,
+      "n_generated": 512,
+      "frechet_inception_distance": 168.70121703765795,
+      "kernel_inception_distance_mean": 0.08040290594100952,
+      "kernel_inception_distance_std": 0.009716701056168188,
+      "inception_score_mean": 4.8132670521289915,
+      "inception_score_std": 0.32922479004288435,
+      "class_agreement": {
+        "n": 512,
+        "correct": 388,
+        "balanced_accuracy": 0.7606511902802507,
+        "confusion_matrix": [
+          [
+            84,
+            0,
+            17,
+            2,
+            2
+          ],
+          [
+            1,
+            74,
+            12,
+            6,
+            13
+          ],
+          [
+            5,
+            9,
+            81,
+            2,
+            3
+          ],
+          [
+            7,
+            2,
+            19,
+            59,
+            17
+          ],
+          [
+            0,
+            4,
+            3,
+            0,
+            90
+          ]
+        ]
+      },
+      "input_class_counts": {
+        "airplane": 105,
+        "bicycle": 106,
+        "boat": 100,
+        "car": 104,
+        "motorbike": 97
+      },
+      "predicted_class_counts": {
+        "airplane": 97,
+        "bicycle": 89,
+        "boat": 132,
+        "car": 69,
+        "motorbike": 125
+      },
+      "predicted_class_coverage": 5
+    },
+    "unconditional_gan": {
+      "n_real": 307,
+      "n_generated": 512,
+      "frechet_inception_distance": 176.5117775640517,
+      "kernel_inception_distance_mean": 0.0904896092414856,
+      "kernel_inception_distance_std": 0.009542801595780366,
+      "inception_score_mean": 4.728303324791962,
+      "inception_score_std": 0.35297369134606305,
+      "class_agreement": null,
+      "input_class_counts": null,
+      "predicted_class_counts": {
+        "airplane": 110,
+        "bicycle": 53,
+        "boat": 158,
+        "car": 78,
+        "motorbike": 113
+      },
+      "predicted_class_coverage": 5
+    }
+  }
+}

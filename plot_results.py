@@ -1,131 +1,115 @@
-"""Plot the archived two-seed AC-GAN evaluation results.
-
-Run from the repository root: python3 plot_results.py
-"""
-
+"""Plot the two AC-GAN recipes from a matched scores CSV or archived metrics JSON."""
 import argparse
+import csv
 import json
 from pathlib import Path
+from statistics import mean
 
-from PIL import Image, ImageDraw, ImageFont
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
+from matplotlib.ticker import MaxNLocator, PercentFormatter
 
 
+RESULTS = Path(__file__).resolve().parent / "results"
 METRICS = (
-    ("FID", "frechet_inception_distance", 250, "lower is better", "{:.1f}"),
-    ("KID", "kernel_inception_distance_mean", 0.14, "lower is better", "{:.3f}"),
-    ("Inception Score", "inception_score_mean", 5, "higher is better", "{:.2f}"),
-    ("Class accuracy", "balanced_accuracy", 1, "higher is better", "{:.1%}"),
+    ("FID ↓", "fid", "frechet_inception_distance", 1, ".1f"),
+    ("KID ↓", "kid", "kernel_inception_distance_mean", 1, ".4f"),
+    ("IS ↑", "is", "inception_score_mean", 1, ".2f"),
+    ("Class hit rate ↑", "class_hit_rate", "balanced_accuracy", 100, ".1f"),
 )
-METHODS = (("original_acgan", "Original AC-GAN"), ("diffaugment_cbn_ema", "DiffAugment + CBN + EMA"))
-SEED_COLORS = ("#3976BD", "#E08B45")
+COLORS = ("#B8BEC5", "#285879")
 
 
-def font(size, bold=False):
-    candidates = (
-        Path("/System/Library/Fonts/Supplemental") / ("Arial Bold.ttf" if bold else "Arial.ttf"),
-        Path("/usr/share/fonts/truetype/dejavu") / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"),
-    )
-    for path in candidates:
-        if path.exists():
-            return ImageFont.truetype(str(path), size)
-    return ImageFont.load_default(size=size)
+def load_pair(path):
+    if path.suffix.lower() == ".csv":
+        with path.open(encoding="utf-8", newline="") as source:
+            overall = [row for row in csv.DictReader(source)
+                       if row["category"] == "overall" and float(row.get("truncation", 0)) == 0]
+        plain = [row for row in overall if row["method"] == "plain_acgan"]
+        improved = [row for row in overall
+                    if row["method"] == "conditional" and float(row["horizontal_flip_prob"]) == 0.25]
+        if len(plain) != 1 or len(improved) != 1:
+            raise ValueError(f"{path}: expected one plain and one improved AC-GAN at 25% horizontal flip")
+        for key in ("seed", "step", "framing", "n_real", "n_generated"):
+            if plain[0][key] != improved[0][key]:
+                raise ValueError(f"{path}: AC-GAN rows differ in {key}")
+        return tuple([float(row[key]) for _, key, _, _, _ in METRICS]
+                     for row in (plain[0], improved[0]))
+
+    report = json.loads(path.read_text(encoding="utf-8"))
+    models = {entry["method"]: entry for entry in report["models"]}
+    pair = []
+    for name in ("original_acgan", "diffaugment_cbn_ema"):
+        model = models[name]
+        pair.append([model["metrics"][key] if key != "balanced_accuracy"
+                     else model["independent_generated"][key] for _, _, key, _, _ in METRICS])
+    return tuple(pair)
 
 
-def load_results(paths):
-    results = []
-    for path in paths:
-        report = json.loads(path.read_text(encoding="utf-8"))
-        by_method = {model["method"]: model for model in report["models"]}
-        missing = {name for name, _ in METHODS} - by_method.keys()
-        if missing:
-            raise ValueError(f"{path}: missing models {sorted(missing)}")
-        results.append((path.parent.name, by_method))
-    if not results:
-        raise ValueError("No metrics.json files found")
-    return results
+def render(pairs, labels, outputs):
+    with plt.rc_context({
+        "font.family": "DejaVu Sans",
+        "font.size": 9,
+        "axes.labelcolor": "#222222",
+        "axes.edgecolor": "#606060",
+        "axes.linewidth": 0.6,
+        "pdf.fonttype": 42,
+    }):
+        figure, axes = plt.subplots(1, len(METRICS), figsize=(7.05, 2.16))
+        figure.subplots_adjust(left=0.075, right=0.975, bottom=0.20, top=0.84, wspace=0.55)
 
-
-def value(model, key):
-    if key == "balanced_accuracy":
-        return model["independent_generated"][key]
-    return model["metrics"][key]
-
-
-def draw_panel(draw, box, metric, results):
-    title, key, limit, direction, fmt = metric
-    x0, y0, x1, y1 = box
-    draw.rounded_rectangle(box, radius=20, fill="#FFFFFF", outline="#DBE2EA", width=2)
-    draw.text((x0 + 32, y0 + 25), title, font=font(29, True), fill="#17283A")
-    draw.text((x1 - 32, y0 + 32), direction.upper(), anchor="ra", font=font(15, True), fill="#607080")
-
-    left, right = x0 + 135, x1 - 65
-    top, bottom = y0 + 102, y1 - 79
-    centers = (left + (right - left) * 0.22, left + (right - left) * 0.78)
-
-    for fraction in (0, 0.25, 0.5, 0.75, 1):
-        y = bottom - (bottom - top) * fraction
-        draw.line((left, y, right, y), fill="#E9EEF3", width=2)
-        draw.text((left - 14, y), fmt.format(limit * fraction), anchor="rm", font=font(15), fill="#72808E")
-
-    def ypos(number):
-        return bottom - (bottom - top) * number / limit
-
-    for index, (seed, models) in enumerate(results):
-        offset = (index - (len(results) - 1) / 2) * 32
-        points = [(centers[j] + offset, ypos(value(models[method], key)))
-                  for j, (method, _) in enumerate(METHODS)]
-        draw.line((*points[0], *points[1]), fill=SEED_COLORS[index % len(SEED_COLORS)], width=3)
-        for x, y in points:
-            draw.ellipse((x - 7, y - 7, x + 7, y + 7), fill=SEED_COLORS[index % len(SEED_COLORS)], outline="white", width=2)
-
-    means = [sum(value(models[method], key) for _, models in results) / len(results) for method, _ in METHODS]
-    for x, mean in zip(centers, means):
-        y = ypos(mean)
-        draw.ellipse((x - 11, y - 11, x + 11, y + 11), fill="#17283A", outline="white", width=3)
-        label_y = max(top + 16, y - 25)
-        draw.text((x, label_y), fmt.format(mean), anchor="mb", font=font(19, True), fill="#17283A")
-
-    for x, (_, label) in zip(centers, METHODS):
-        if label == "Original AC-GAN":
-            draw.text((x, bottom + 24), label, anchor="mt", font=font(16, True), fill="#34465A")
-        else:
-            draw.text((x, bottom + 20), "DiffAugment +", anchor="mt", font=font(16, True), fill="#34465A")
-            draw.text((x, bottom + 40), "CBN + EMA", anchor="mt", font=font(16, True), fill="#34465A")
+        for index, (axis, (title, _, _, scale, fmt)) in enumerate(zip(axes, METRICS)):
+            values = [[pair[method][index] * scale for pair in pairs] for method in range(2)]
+            centers = [0, 1]
+            averages = [mean(column) for column in values]
+            unit = "%" if scale == 100 else ""
+            axis.bar(centers, averages, color=COLORS, width=0.56, zorder=2)
+            for position, average, column in zip(centers, averages, values):
+                if len(column) > 1:
+                    axis.scatter([position] * len(column), column, s=11, facecolors="white",
+                                 edgecolors="#202020", linewidths=0.6, zorder=3)
+                axis.annotate(format(average, fmt) + unit, (position, max(column)), xytext=(0, 4),
+                              textcoords="offset points", ha="center", va="bottom", fontsize=8)
+            axis.set_title(title, fontsize=9.2, fontweight="bold", pad=8)
+            axis.set_xlim(-0.50, 1.50)
+            axis.set_ylim(0, 100 if scale == 100 else max(map(max, values)) * 1.26)
+            axis.set_xticks([])
+            axis.yaxis.set_major_locator(MaxNLocator(nbins=4))
+            if unit:
+                axis.yaxis.set_major_formatter(PercentFormatter(xmax=100, decimals=0))
+            axis.tick_params(axis="y", labelsize=7.5, length=2.5, width=0.6, pad=2)
+            axis.grid(axis="y", color="#E1E3E6", linewidth=0.55, zorder=0)
+            axis.spines["top"].set_visible(False)
+            axis.spines["right"].set_visible(False)
+        handles = [Patch(facecolor=color, label=label) for color, label in zip(COLORS, labels)]
+        figure.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.01),
+                      ncol=2, frameon=False, fontsize=8.5, handlelength=1.25, columnspacing=1.8)
+        for output in outputs:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            figure.savefig(output, dpi=400, facecolor="white")
+            print(output)
+        plt.close(figure)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("inputs", nargs="*", type=Path, help="Evaluation metrics.json files")
-    parser.add_argument("--output", type=Path, default=Path("results/metrics_comparison.png"))
+    parser.add_argument("inputs", nargs="*", type=Path, help="Matched scores CSVs or archived metrics JSONs")
+    parser.add_argument("--output", type=Path, help="Write a single PNG or PDF instead of both defaults")
     args = parser.parse_args()
-    inputs = args.inputs or sorted(Path("results").glob("seed*/metrics.json"))
-    results = load_results(inputs)
-
-    image = Image.new("RGB", (1600, 1090), "#F4F7FA")
-    draw = ImageDraw.Draw(image)
-    draw.text((70, 52), "AC-GAN result comparison", font=font(43, True), fill="#17283A")
-    draw.text((72, 111), "SYSU-Shape · 64 px · archived evaluation runs", font=font(23), fill="#526578")
-
-    legend_x = 1050
-    for index, (seed, _) in enumerate(results):
-        x = legend_x + 150 * index
-        draw.ellipse((x, 78, x + 14, 92), fill=SEED_COLORS[index % len(SEED_COLORS)])
-        draw.text((x + 22, 85), seed, anchor="lm", font=font(18), fill="#34465A")
-    draw.ellipse((legend_x, 113, legend_x + 18, 131), fill="#17283A")
-    draw.text((legend_x + 26, 122), "mean across seeds", anchor="lm", font=font(18), fill="#34465A")
-
-    boxes = ((70, 170, 780, 565), (820, 170, 1530, 565),
-             (70, 590, 780, 985), (820, 590, 1530, 985))
-    for box, metric in zip(boxes, METRICS):
-        draw_panel(draw, box, metric, results)
-
-    draw.text((72, 1024), "Points and lines show individual seeds. Dark markers and labels show the two-seed mean.",
-              font=font(18), fill="#526578")
-    draw.text((72, 1051), "FID / KID / IS: 256 generated images per run; class accuracy: 1,280 generated images per run.",
-              font=font(17), fill="#526578")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    image.save(args.output)
-    print(args.output)
+    inputs = args.inputs or [RESULTS / "matched_acgan" / "scores.csv"]
+    formats = {path.suffix.lower() for path in inputs}
+    if formats == {".csv"}:
+        labels = ("Plain AC-GAN", "Improved AC-GAN")
+    elif formats == {".json"}:
+        labels = ("Early AC-GAN", "DiffAugment + CBN + EMA")
+    else:
+        parser.error("Use matched CSVs or archived JSONs from the same evaluation protocol.")
+    outputs = [args.output] if args.output else [RESULTS / f"metrics_comparison.{fmt}" for fmt in ("png", "pdf")]
+    render([load_pair(path) for path in inputs], labels, outputs)
 
 
 if __name__ == "__main__":

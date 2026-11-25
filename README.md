@@ -51,9 +51,13 @@ The original model reconstructs the paper appendix architecture for this dataset
 - [Original 128px sample grid](results/original/paper128.png)
 - [Matched-noise comparison with real images, seed 42](results/seed42/comparison.png) and [metrics](results/seed42/metrics.json)
 - [Matched-noise comparison with real images, seed 123](results/seed123/comparison.png) and [metrics](results/seed123/metrics.json)
-- [Two-seed metric comparison plot](results/metrics_comparison.png), generated with `python3 plot_results.py`
+- [Matched plain vs improved AC-GAN](results/matched_acgan/comparison.png) and [overall and per-class metrics](results/matched_acgan/scores.csv)
+- Paper figure for the matched run [PNG](results/metrics_comparison.png) · [PDF](results/metrics_comparison.pdf)
+- [Three generation modes and 30 sample images](results/generation/) · [metrics](results/generation/metrics.json)
 
-The comparison grids show the archived 6,000-step 64px baseline and the 12,000-step CBN run. They summarize the two complete training recipes. Full local checkpoints, samples, and logs are in the Git-ignored `runs/` directory.
+The seed-42 and seed-123 grids show the archived 6,000-step full-image baseline and the 12,000-step CBN run. Full local checkpoints, samples, and logs are in the Git-ignored `runs/` directory.
+
+Run `python plot_results.py` to regenerate the paper figure from the saved seed-2026 matched scores. The plain and improved models both trained for 12,000 updates on the same 64×64 crops. Overall FID, KID, and IS use 512 generated images per model and 307 validation photos as the reference for FID and KID. Class hit rate is balanced across the five classes, with 256 generated images per class. To plot newly evaluated checkpoints, pass the new scores CSV as an argument.
 
 ## Run the project
 
@@ -88,11 +92,11 @@ There are two ways to generate without specifying a class at the command line.
 
    To show a single class, run `python demo.py --class-name bicycle --seed 17` and open `runs/demo/bicycle/real_vs_generated.png`. Valid classes are `airplane`, `bicycle`, `boat`, `car`, and `motorbike`. Change `--seed` to draw new samples.
 
-4. For the matched baseline and metric comparison, run the commands below. Set `--truncation 1.5` on a separate evaluation to measure the demo's sampling setting.
+4. For the matched baseline and metric comparison, run the commands below. If `runs/plain_acgan/model_12000.pt` already exists, skip baseline training. Set `--truncation 1.5` on a separate evaluation to measure the demo's sampling setting.
 
    ```powershell
-   python train.py --framing crop64 --seed 2026 --steps 12000 --plain-acgan --deterministic --output runs/baseline
-   python evaluate.py runs/baseline/model_12000.pt runs/current/model_12000.pt --output runs/evaluation
+   python train.py --framing crop64 --seed 2026 --steps 12000 --plain-acgan --deterministic --output runs/plain_acgan
+   python evaluate.py runs/plain_acgan/model_12000.pt runs/current/model_12000.pt --output runs/evaluation
    python evaluate.py runs/current/model_12000.pt --truncation 1.5 --output runs/evaluation_truncated
    ```
 
@@ -108,6 +112,14 @@ There are two ways to generate without specifying a class at the command line.
    ```
 
    Skip unconditional training if `runs/unconditional/model_12000.pt` already exists. For the conditional versus unconditional metrics, pass the conditional checkpoint first to `evaluate.py`.
+
+6. Export the three-way comparison using both trained checkpoints.
+
+   ```powershell
+   python compare_generation.py
+   ```
+
+   [Results](results/generation/) include 10 PNGs per mode, a [comparison figure](results/generation/comparison.png), and [metrics.json](results/generation/metrics.json). The four metrics are FID, KID, Inception Score, and balanced class agreement. Class agreement is `null` for the noise-only GAN because it has no target labels. Classifier-predicted category counts are reported for all three modes. The metrics use 512 generated samples per mode, and specified-class generation also has per-class results.
 
 ### Rivanna (Bash)
 
