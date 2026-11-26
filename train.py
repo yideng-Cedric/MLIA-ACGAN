@@ -134,7 +134,7 @@ def save_samples(generator, conditional, classes, device, output, class_name=Non
 
 
 def train(split, framing, conditional, seed, steps, device, output, horizontal_flip_prob=0.0,
-          plain_acgan=False, *, no_cbn=False):
+          plain_acgan=False, *, no_cbn=False, no_translation=False):
     classes = split["classes"]
     torch.manual_seed(seed)
     images = torch.stack([image_tensor(path, framing) for path, _ in split["train"]])
@@ -147,7 +147,7 @@ def train(split, framing, conditional, seed, steps, device, output, horizontal_f
     loader = DataLoader(rows, batch_size=BATCH_SIZE, shuffle=True, drop_last=True,
                         generator=torch.Generator().manual_seed(seed))
     use_cbn = conditional and not plain_acgan and not no_cbn
-    translation_max_px = 0 if plain_acgan else 4
+    translation_max_px = 0 if plain_acgan or no_translation else 4
     g, d = [module.to(device) for module in make_models(len(classes), conditional, use_cbn)]
     ema = None
     if not plain_acgan:
@@ -241,6 +241,8 @@ def main():
     parser.add_argument("--no-cbn", action="store_true",
                         help="Use standard BatchNorm in the conditional generator")
     parser.add_argument("--deterministic", action="store_true", help="Use deterministic PyTorch kernels")
+    parser.add_argument("--no-translation", action="store_true",
+                        help="Skip translation before D")
     parser.add_argument("--steps", type=int, default=12000)
     parser.add_argument("--seed", type=int, default=42, help="Seed for training or random-class sampling")
     parser.add_argument("--horizontal-flip-prob", type=float, default=0.0,
@@ -281,7 +283,7 @@ def main():
     else:
         train(load_split(args.data_dir), args.framing, not args.unconditional,
               args.seed, args.steps, device, args.output, args.horizontal_flip_prob,
-              args.plain_acgan, no_cbn=args.no_cbn)
+              args.plain_acgan, no_cbn=args.no_cbn, no_translation=args.no_translation)
 
 
 if __name__ == "__main__":

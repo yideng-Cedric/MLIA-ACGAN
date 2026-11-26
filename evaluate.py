@@ -111,6 +111,7 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
     flip_comparisons = defaultdict(dict)
     plain_comparisons = {}
     cbn_comparisons = defaultdict(dict)
+    translation_comparisons = defaultdict(dict)
     output.mkdir(parents=True, exist_ok=True)
 
     for checkpoint in checkpoints:
@@ -122,12 +123,16 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
         plain_acgan = config.get("plain_acgan", False)
         use_cbn = config.get("conditional_batch_norm", False)
         no_cbn = conditional and config.get("plain_acgan") is False and not use_cbn
+        translation = config.get("translation_max_px")
+        no_translation = conditional and not plain_acgan and translation == 0
         assert stored_classes == classes
         method = "conditional" if conditional else "unconditional"
         if plain_acgan:
             method = "plain_acgan"
         elif no_cbn:
             method = "conditional_no_cbn"
+        elif no_translation:
+            method = "conditional_no_translation"
         flip_suffix = f"_hflip{flip_prob:g}" if flip_prob else ""
         folder = output / f"{framing}_{method}{flip_suffix}_seed{seed}_step{step}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -175,16 +180,21 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             model_name = "Basic AC-GAN" if plain_acgan else f"AC-GAN | HFlip {flip_prob:.0%}"
             if no_cbn:
                 model_name = f"AC-GAN without CBN | HFlip {flip_prob:.0%}"
+            elif no_translation:
+                model_name = f"AC-GAN without translation | HFlip {flip_prob:.0%}"
             conditioning_grid(folder / "comparison.png", f"{framing} | {model_name} | seed {seed}",
                               classes, real, val_labels, rows)
             if plain_acgan:
                 plain_comparisons[seed, step, framing] = rows
-            elif not no_cbn:
+            elif not no_cbn and not no_translation:
                 flip_comparisons[seed, step, framing][flip_prob] = (real, rows)
                 conditional_samples[seed, step, framing] = rows
             if use_cbn or no_cbn:
                 cbn_key = (seed, step, framing, flip_prob, config.get("translation_max_px", 0), config.get("ema_decay"))
                 cbn_comparisons[cbn_key][use_cbn] = (real, rows)
+            if use_cbn and translation in (0, 4):
+                translation_key = (seed, step, framing, flip_prob, config.get("ema_decay"))
+                translation_comparisons[translation_key][translation] = (real, rows)
         else:
             prediction = classifier.predict(normalize(fake_features).numpy())
             report["predicted_class_counts"] = dict(zip(
@@ -229,7 +239,7 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
         print(f"{folder.name}: {report['overall']}", flush=True)
 
     with (output / "scores.csv").open("w", newline="", encoding="utf-8") as file:
-        writer = csv.DictWriter(file, fieldnames=list(score_rows[0]))
+        writer = csv.DictWriter(file, fieldnames=list(score_rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(score_rows)
 
@@ -262,6 +272,20 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
         plot_grid(output / f"cbn_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png",
                   f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
 
+
+    for (seed, step, framing, flip_prob, _), variants in translation_comparisons.items():
+        if len(variants) != 2:
+            continue
+        real, translation_off = variants[0]
+        _, translation_on = variants[4]
+        panels = [
+            [(115, "Real validation", real[val_labels == c][:1]),
+             (240, "Translation off (0px)", translation_off[c][:4]),
+             (660, "Translation on (4px)", translation_on[c][:4])]
+            for c in range(len(classes))
+        ]
+        plot_grid(output / f"translation_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png",
+                  f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
 
     for key, basic_rows in plain_comparisons.items():
         seed, step, framing = key
