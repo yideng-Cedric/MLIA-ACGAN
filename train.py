@@ -101,13 +101,15 @@ def calibrate_unconditional(generator, device):
     generator.eval()
 
 
-def load_generation_checkpoint(path, device):
+def load_generation_checkpoint(path, device, *, weight_key=None):
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     config = checkpoint["config"]
     conditional = config.get("conditional", True)
     use_cbn = config.get("conditional_batch_norm", False)
     generator, _ = make_models(len(checkpoint["classes"]), conditional, use_cbn)
-    generator.load_state_dict(checkpoint.get("generator_ema", checkpoint["generator"]))
+    if weight_key is None:
+        weight_key = "generator_ema" if "generator_ema" in checkpoint else "generator"
+    generator.load_state_dict(checkpoint[weight_key])
     return generator.to(device).eval(), config, checkpoint["classes"], checkpoint["step"]
 
 
@@ -133,8 +135,7 @@ def save_samples(generator, conditional, classes, device, output, class_name=Non
         Image.fromarray(rgb.permute(1, 2, 0).numpy()).save(output / f"{name}.png")
 
 
-def train(split, framing, conditional, seed, steps, device, output, horizontal_flip_prob=0.0,
-          plain_acgan=False, *, no_cbn=False, no_translation=False):
+def train(split, framing, conditional, seed, steps, device, output, horizontal_flip_prob=0.0, plain_acgan=False, *, no_cbn=False, no_translation=False):
     classes = split["classes"]
     torch.manual_seed(seed)
     images = torch.stack([image_tensor(path, framing) for path, _ in split["train"]])
@@ -238,11 +239,9 @@ def main():
     parser.add_argument("--unconditional", action="store_true")
     parser.add_argument("--plain-acgan", action="store_true",
                         help="Use standard BatchNorm and train without augmentation or EMA")
-    parser.add_argument("--no-cbn", action="store_true",
-                        help="Use standard BatchNorm in the conditional generator")
+    parser.add_argument("--no-cbn", action="store_true", help="Use standard BatchNorm in the conditional generator")
     parser.add_argument("--deterministic", action="store_true", help="Use deterministic PyTorch kernels")
-    parser.add_argument("--no-translation", action="store_true",
-                        help="Skip translation before D")
+    parser.add_argument("--no-translation", action="store_true", help="Skip translation before D")
     parser.add_argument("--steps", type=int, default=12000)
     parser.add_argument("--seed", type=int, default=42, help="Seed for training or random-class sampling")
     parser.add_argument("--horizontal-flip-prob", type=float, default=0.0,
@@ -281,9 +280,7 @@ def main():
         save_samples(generator, conditional, classes, device, args.output, args.class_name, args.truncation,
                      random_class_seed=args.seed if args.random_class else None)
     else:
-        train(load_split(args.data_dir), args.framing, not args.unconditional,
-              args.seed, args.steps, device, args.output, args.horizontal_flip_prob,
-              args.plain_acgan, no_cbn=args.no_cbn, no_translation=args.no_translation)
+        train(load_split(args.data_dir), args.framing, not args.unconditional, args.seed, args.steps, device, args.output, args.horizontal_flip_prob, args.plain_acgan, no_cbn=args.no_cbn, no_translation=args.no_translation)
 
 
 if __name__ == "__main__":

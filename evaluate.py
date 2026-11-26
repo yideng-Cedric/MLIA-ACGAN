@@ -4,6 +4,7 @@ import csv
 import json
 import math
 from collections import defaultdict
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -17,8 +18,7 @@ from torch_fidelity.feature_extractor_inceptionv3 import FeatureExtractorIncepti
 from torch_fidelity.metric_isc import isc_features_to_metric
 from torch_fidelity.metric_kid import kid_features_to_metric
 
-from train import (DATA_DIR, image_tensor, load_generation_checkpoint, load_split,
-                   sample, sample_noise, save_samples)
+from train import (DATA_DIR, calibrate_batch_norm, image_tensor, load_generation_checkpoint, load_split, sample, sample_noise, save_samples)
 from evaluate_cbn import agreement, features, within_class_distance
 
 
@@ -88,8 +88,7 @@ def noise_grid(output, name, classes, real, labels, generated):
     plot_grid(output, name, ["Real", "Generated", "Generated"], rows)
 
 
-def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=1234,
-             class_noise_seed=NOISE_SEED, truncation=0.0):
+def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=1234, class_noise_seed=NOISE_SEED, truncation=0.0, *, compare_ema=False):
     torch.set_num_threads(4)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     split = load_split(data_dir)
@@ -112,10 +111,14 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
     plain_comparisons = {}
     cbn_comparisons = defaultdict(dict)
     translation_comparisons = defaultdict(dict)
+    ema_comparisons = defaultdict(dict)
+    weight_keys = ("generator", "generator_ema") if compare_ema else (None,)
+    if compare_ema:
+        class_counts = train_labels.bincount(minlength=len(classes)).float().to(device)
     output.mkdir(parents=True, exist_ok=True)
 
-    for checkpoint in checkpoints:
-        generator, config, stored_classes, step = load_generation_checkpoint(checkpoint, device)
+    for checkpoint, weight_key in product(checkpoints, weight_keys):
+        generator, config, stored_classes, step = load_generation_checkpoint(checkpoint, device, weight_key=weight_key)
         framing = config.get("framing", "full64")
         conditional = config.get("conditional", True)
         seed = config["seed"]
@@ -127,7 +130,12 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
         no_translation = conditional and not plain_acgan and translation == 0
         assert stored_classes == classes
         method = "conditional" if conditional else "unconditional"
-        if plain_acgan:
+        if compare_ema:
+            if not conditional or "ema_bn_batches" not in config:
+                raise ValueError("--compare-ema requires a conditional checkpoint trained with EMA")
+            calibrate_batch_norm(generator, class_counts, config["batch_size"], config["ema_bn_batches"])
+            method = "conditional_raw" if weight_key == "generator" else "conditional_ema"
+        elif plain_acgan:
             method = "plain_acgan"
         elif no_cbn:
             method = "conditional_no_cbn"
@@ -178,21 +186,25 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             report["feature_diversity_generated"] = within_class_distance(fresh_features, target, len(classes))
             rows = fresh_images.unflatten(0, (len(classes), N_CLASS))
             model_name = "Basic AC-GAN" if plain_acgan else f"AC-GAN | HFlip {flip_prob:.0%}"
-            if no_cbn:
+            if compare_ema:
+                model_name = "Raw weights" if weight_key == "generator" else "EMA weights"
+            elif no_cbn:
                 model_name = f"AC-GAN without CBN | HFlip {flip_prob:.0%}"
             elif no_translation:
                 model_name = f"AC-GAN without translation | HFlip {flip_prob:.0%}"
             conditioning_grid(folder / "comparison.png", f"{framing} | {model_name} | seed {seed}",
                               classes, real, val_labels, rows)
-            if plain_acgan:
+            if compare_ema:
+                ema_comparisons[checkpoint, seed, step, framing][weight_key] = (real, rows)
+            elif plain_acgan:
                 plain_comparisons[seed, step, framing] = rows
             elif not no_cbn and not no_translation:
                 flip_comparisons[seed, step, framing][flip_prob] = (real, rows)
                 conditional_samples[seed, step, framing] = rows
-            if use_cbn or no_cbn:
+            if not compare_ema and (use_cbn or no_cbn):
                 cbn_key = (seed, step, framing, flip_prob, config.get("translation_max_px", 0), config.get("ema_decay"))
                 cbn_comparisons[cbn_key][use_cbn] = (real, rows)
-            if use_cbn and translation in (0, 4):
+            if not compare_ema and use_cbn and translation in (0, 4):
                 translation_key = (seed, step, framing, flip_prob, config.get("ema_decay"))
                 translation_comparisons[translation_key][translation] = (real, rows)
         else:
@@ -263,14 +275,8 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             continue
         real, cbn_off = variants[False]
         _, cbn_on = variants[True]
-        panels = [
-            [(115, "Real validation", real[val_labels == c][:1]),
-             (240, "CBN off", cbn_off[c][:4]),
-             (660, "CBN on", cbn_on[c][:4])]
-            for c in range(len(classes))
-        ]
-        plot_grid(output / f"cbn_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png",
-                  f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
+        panels = [[(115, "Real validation", real[val_labels == c][:1]), (240, "CBN off", cbn_off[c][:4]), (660, "CBN on", cbn_on[c][:4])] for c in range(len(classes))]
+        plot_grid(output / f"cbn_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png", f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
 
 
     for (seed, step, framing, flip_prob, _), variants in translation_comparisons.items():
@@ -278,14 +284,14 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             continue
         real, translation_off = variants[0]
         _, translation_on = variants[4]
-        panels = [
-            [(115, "Real validation", real[val_labels == c][:1]),
-             (240, "Translation off (0px)", translation_off[c][:4]),
-             (660, "Translation on (4px)", translation_on[c][:4])]
-            for c in range(len(classes))
-        ]
-        plot_grid(output / f"translation_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png",
-                  f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
+        panels = [[(115, "Real validation", real[val_labels == c][:1]), (240, "Translation off (0px)", translation_off[c][:4]), (660, "Translation on (4px)", translation_on[c][:4])] for c in range(len(classes))]
+        plot_grid(output / f"translation_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png", f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
+
+    for (_, seed, step, framing), variants in ema_comparisons.items():
+        real, raw = variants["generator"]
+        _, ema = variants["generator_ema"]
+        panels = [[(115, "Real validation", real[val_labels == c][:1]), (240, "Raw weights", raw[c][:4]), (660, "EMA weights", ema[c][:4])] for c in range(len(classes))]
+        plot_grid(output / f"ema_ablation_{framing}_seed{seed}_step{step}.png", f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
 
     for key, basic_rows in plain_comparisons.items():
         seed, step, framing = key
@@ -308,6 +314,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
     parser.add_argument("--inception-weights", type=Path)
+    parser.add_argument("--compare-ema", action="store_true", help="Compare raw and EMA generator weights with matching BatchNorm calibration")
     parser.add_argument("--overall-noise-seed", type=int, default=1234)
     parser.add_argument("--class-noise-seed", type=int, default=NOISE_SEED)
     parser.add_argument("--truncation", type=float, default=0.0,
@@ -316,8 +323,7 @@ def main():
     if not math.isfinite(args.truncation) or args.truncation < 0:
         parser.error("--truncation must be finite and nonnegative")
     with threadpool_limits(limits=4):
-        evaluate(args.checkpoints, args.output, args.data_dir, args.inception_weights,
-                 args.overall_noise_seed, args.class_noise_seed, args.truncation)
+        evaluate(args.checkpoints, args.output, args.data_dir, args.inception_weights, args.overall_noise_seed, args.class_noise_seed, args.truncation, compare_ema=args.compare_ema)
 
 
 if __name__ == "__main__":
