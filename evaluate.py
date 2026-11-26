@@ -110,6 +110,7 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
     conditional_samples = {}
     flip_comparisons = defaultdict(dict)
     plain_comparisons = {}
+    cbn_comparisons = defaultdict(dict)
     output.mkdir(parents=True, exist_ok=True)
 
     for checkpoint in checkpoints:
@@ -119,10 +120,14 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
         seed = config["seed"]
         flip_prob = config.get("horizontal_flip_prob", 0.0)
         plain_acgan = config.get("plain_acgan", False)
+        use_cbn = config.get("conditional_batch_norm", False)
+        no_cbn = conditional and config.get("plain_acgan") is False and not use_cbn
         assert stored_classes == classes
         method = "conditional" if conditional else "unconditional"
         if plain_acgan:
             method = "plain_acgan"
+        elif no_cbn:
+            method = "conditional_no_cbn"
         flip_suffix = f"_hflip{flip_prob:g}" if flip_prob else ""
         folder = output / f"{framing}_{method}{flip_suffix}_seed{seed}_step{step}"
         folder.mkdir(parents=True, exist_ok=True)
@@ -168,13 +173,18 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             report["feature_diversity_generated"] = within_class_distance(fresh_features, target, len(classes))
             rows = fresh_images.unflatten(0, (len(classes), N_CLASS))
             model_name = "Basic AC-GAN" if plain_acgan else f"AC-GAN | HFlip {flip_prob:.0%}"
+            if no_cbn:
+                model_name = f"AC-GAN without CBN | HFlip {flip_prob:.0%}"
             conditioning_grid(folder / "comparison.png", f"{framing} | {model_name} | seed {seed}",
                               classes, real, val_labels, rows)
             if plain_acgan:
                 plain_comparisons[seed, step, framing] = rows
-            else:
+            elif not no_cbn:
                 flip_comparisons[seed, step, framing][flip_prob] = (real, rows)
                 conditional_samples[seed, step, framing] = rows
+            if use_cbn or no_cbn:
+                cbn_key = (seed, step, framing, flip_prob, config.get("translation_max_px", 0), config.get("ema_decay"))
+                cbn_comparisons[cbn_key][use_cbn] = (real, rows)
         else:
             prediction = classifier.predict(normalize(fake_features).numpy())
             report["predicted_class_counts"] = dict(zip(
@@ -236,6 +246,20 @@ def evaluate(checkpoints, output, data_dir, weights_path, overall_noise_seed=123
             for c in range(len(classes))
         ]
         plot_grid(output / f"horizontal_flip_seed{seed}_step{step}.png",
+                  f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
+
+    for (seed, step, framing, flip_prob, _, _), variants in cbn_comparisons.items():
+        if len(variants) != 2:
+            continue
+        real, cbn_off = variants[False]
+        _, cbn_on = variants[True]
+        panels = [
+            [(115, "Real validation", real[val_labels == c][:1]),
+             (240, "CBN off", cbn_off[c][:4]),
+             (660, "CBN on", cbn_on[c][:4])]
+            for c in range(len(classes))
+        ]
+        plot_grid(output / f"cbn_ablation_{framing}_hflip{flip_prob:g}_seed{seed}_step{step}.png",
                   f"{framing} | Matched noise | Seed {seed} | {step:,} updates", classes, panels)
 
 

@@ -133,7 +133,8 @@ def save_samples(generator, conditional, classes, device, output, class_name=Non
         Image.fromarray(rgb.permute(1, 2, 0).numpy()).save(output / f"{name}.png")
 
 
-def train(split, framing, conditional, seed, steps, device, output, horizontal_flip_prob=0.0, plain_acgan=False):
+def train(split, framing, conditional, seed, steps, device, output, horizontal_flip_prob=0.0,
+          plain_acgan=False, *, no_cbn=False):
     classes = split["classes"]
     torch.manual_seed(seed)
     images = torch.stack([image_tensor(path, framing) for path, _ in split["train"]])
@@ -145,7 +146,7 @@ def train(split, framing, conditional, seed, steps, device, output, horizontal_f
         rows = [(image,) for image in images]
     loader = DataLoader(rows, batch_size=BATCH_SIZE, shuffle=True, drop_last=True,
                         generator=torch.Generator().manual_seed(seed))
-    use_cbn = conditional and not plain_acgan
+    use_cbn = conditional and not plain_acgan and not no_cbn
     translation_max_px = 0 if plain_acgan else 4
     g, d = [module.to(device) for module in make_models(len(classes), conditional, use_cbn)]
     ema = None
@@ -237,6 +238,8 @@ def main():
     parser.add_argument("--unconditional", action="store_true")
     parser.add_argument("--plain-acgan", action="store_true",
                         help="Use standard BatchNorm and train without augmentation or EMA")
+    parser.add_argument("--no-cbn", action="store_true",
+                        help="Use standard BatchNorm in the conditional generator")
     parser.add_argument("--deterministic", action="store_true", help="Use deterministic PyTorch kernels")
     parser.add_argument("--steps", type=int, default=12000)
     parser.add_argument("--seed", type=int, default=42, help="Seed for training or random-class sampling")
@@ -260,6 +263,8 @@ def main():
         parser.error("--truncation requires a nonnegative finite value and a checkpoint")
     if (args.class_name or args.random_class) and not args.checkpoint:
         parser.error("--class-name and --random-class require --checkpoint")
+    if args.no_cbn and (args.unconditional or args.plain_acgan or args.checkpoint):
+        parser.error("--no-cbn requires training the augmented conditional model")
     if args.deterministic:
         torch.use_deterministic_algorithms(True)
     torch.set_num_threads(4)
@@ -275,7 +280,8 @@ def main():
                      random_class_seed=args.seed if args.random_class else None)
     else:
         train(load_split(args.data_dir), args.framing, not args.unconditional,
-              args.seed, args.steps, device, args.output, args.horizontal_flip_prob, args.plain_acgan)
+              args.seed, args.steps, device, args.output, args.horizontal_flip_prob,
+              args.plain_acgan, no_cbn=args.no_cbn)
 
 
 if __name__ == "__main__":
